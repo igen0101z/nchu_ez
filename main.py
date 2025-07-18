@@ -60,7 +60,7 @@ class JournalAutoFiller:
                 # 載入帳號密碼
                 self.username_var.set(config.get('username', ''))
                 self.password_var.set(config.get('password', ''))
-                self.school_id_var.set(config.get('school_id', '114B1302'))
+                self.school_id_var.set(config.get('school_id'))
                 self.url_var.set(config.get('url', 'https://psf.nchu.edu.tw/punch/Menu.jsp'))
                 
                 # 載入校內編號列表
@@ -110,7 +110,7 @@ class JournalAutoFiller:
             # 清除界面
             self.username_var.set('')
             self.password_var.set('')
-            self.school_combo['values'] = ('114B1302', '113B1367')  # 重置為預設選項
+            self.school_combo['values'] = ('')  # 重置為預設選項
             self.url_var.set('https://psf.nchu.edu.tw/punch/Menu.jsp')
             self.content_text.delete('1.0', tk.END)
             
@@ -215,9 +215,9 @@ class JournalAutoFiller:
         config_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
         
         ttk.Label(config_frame, text="校內編號:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
-        self.school_id_var = tk.StringVar(value="114B1302")
+        self.school_id_var = tk.StringVar(value="")
         self.school_combo = ttk.Combobox(config_frame, textvariable=self.school_id_var, width=15)
-        self.school_combo['values'] = ('114B1302', '113B1367')
+        self.school_combo['values'] = ('')
         self.school_combo.grid(row=0, column=1, sticky=tk.W)
         
         # 新增校內編號按鈕
@@ -608,7 +608,7 @@ class JournalAutoFiller:
 
 🚀 使用步驟:
 1. 輸入校內帳號和密碼
-2. 選擇校內編號 (114B1302 或 113B1367)
+2. 選擇校內編號
 3. 選擇開始和結束日期
 4. 輸入工作內容
 5. 點擊「開始執行」
