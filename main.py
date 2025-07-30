@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-興大學習日誌自動填寫工具
+興大學習日誌自動填寫工具 
 National Chung Hsing University Learning Journal Auto-Fill Tool
 
 功能：
@@ -9,8 +9,9 @@ National Chung Hsing University Learning Journal Auto-Fill Tool
 - 批量填寫學習日誌（每日模式）
 - 可視化瀏覽器操作
 - 智能表單識別
+- 支援小分辨率設備（添加滾動條）
 
-版本：5.1 (僅修改兩項)
+版本：5.2
 """
 
 import tkinter as tk
@@ -37,6 +38,59 @@ try:
     HAS_TKCALENDAR = True
 except ImportError:
     HAS_TKCALENDAR = False
+
+class ScrollableFrame:
+    """可滾動的框架類別"""
+    
+    def __init__(self, parent):
+        self.parent = parent
+        
+        # 建立主框架
+        self.main_frame = ttk.Frame(parent)
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # 建立Canvas和垂直滾動條（僅垂直滾動）
+        self.canvas = tk.Canvas(self.main_frame, highlightthickness=0)
+        self.v_scrollbar = ttk.Scrollbar(self.main_frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        
+        # 配置Canvas垂直滾動
+        self.canvas.configure(yscrollcommand=self.v_scrollbar.set)
+        
+        # 建立可滾動的內容框架
+        self.scrollable_frame = ttk.Frame(self.canvas)
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        
+        # 配置滾動條和Canvas的佈局
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 綁定事件
+        self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        
+        # 綁定鍵盤滾動
+        self._bind_to_mousewheel(self.canvas)
+        
+    def _on_frame_configure(self, event):
+        """當內容框架大小變化時更新滾動區域"""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        
+    def _on_canvas_configure(self, event):
+        """當Canvas大小變化時調整內容框架寬度以防止水平滾動"""
+        canvas_width = event.width
+        # 確保內容框架寬度與Canvas相同，避免水平滾動
+        self.canvas.itemconfig(self.canvas_frame, width=canvas_width)
+        
+    def _on_mousewheel(self, event):
+        """處理滑鼠滾輪事件"""
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+    def _bind_to_mousewheel(self, widget):
+        """綁定滑鼠滾輪事件到widget及其子widget"""
+        widget.bind("<MouseWheel>", self._on_mousewheel)
+        for child in widget.winfo_children():
+            self._bind_to_mousewheel(child)
 
 class JournalAutoFiller:
     """學習日誌自動填寫主程式"""
@@ -179,70 +233,103 @@ class JournalAutoFiller:
     def setup_gui(self):
         """設定GUI界面"""
         self.root.title("🎓 興大學習日誌自動填寫工具")
-        self.root.geometry("800x1000")
         
-        # 主框架
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        # 設定視窗大小
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # 根據螢幕大小調整視窗尺寸
+        if screen_width < 1024 or screen_height < 768:
+            # 小分辨率設備
+            window_width = min(800, screen_width - 100)
+            window_height = min(600, screen_height - 100)
+        else:
+            # 一般分辨率設備
+            window_width = 900
+            window_height = 800
+            
+        self.root.geometry(f"{window_width}x{window_height}")
+        self.root.minsize(650, 450)  # 設定最小尺寸
+        
+        # 建立可滾動框架
+        self.scroll_frame = ScrollableFrame(self.root)
+        main_frame = self.scroll_frame.scrollable_frame
+        
+        # 內容框架 - 確保不會產生水平滾動
+        content_frame = ttk.Frame(main_frame, padding="15")
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # 標題
-        title = ttk.Label(main_frame, text="🎓 興大學習日誌自動填寫工具", 
+        title = ttk.Label(content_frame, text="🎓 興大學習日誌自動填寫工具", 
                          font=('Microsoft JhengHei', 16, 'bold'))
-        title.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        title.pack(pady=(0, 20))
         
         # 登入設定區
-        login_frame = ttk.LabelFrame(main_frame, text="🔐 登入設定", padding="15")
-        login_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        login_frame = ttk.LabelFrame(content_frame, text="🔐 登入設定", padding="10")
+        login_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(login_frame, text="系統網址:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        # 系統網址
+        url_frame = ttk.Frame(login_frame)
+        url_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(url_frame, text="系統網址:", width=10).pack(side=tk.LEFT)
         self.url_var = tk.StringVar(value="https://psf.nchu.edu.tw/punch/Menu.jsp")
-        ttk.Entry(login_frame, textvariable=self.url_var, width=50).grid(row=0, column=1, sticky=(tk.W, tk.E))
+        url_entry = ttk.Entry(url_frame, textvariable=self.url_var)
+        url_entry.pack(side=tk.LEFT, padx=(5, 0), fill=tk.X, expand=True)
         
-        ttk.Label(login_frame, text="校內帳號:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        # 校內帳號
+        user_frame = ttk.Frame(login_frame)
+        user_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(user_frame, text="校內帳號:", width=10).pack(side=tk.LEFT)
         self.username_var = tk.StringVar()
-        ttk.Entry(login_frame, textvariable=self.username_var, width=30).grid(row=1, column=1, sticky=tk.W, pady=(10, 0))
+        ttk.Entry(user_frame, textvariable=self.username_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
         
-        ttk.Label(login_frame, text="密碼:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
+        # 密碼
+        pass_frame = ttk.Frame(login_frame)
+        pass_frame.pack(fill=tk.X)
+        ttk.Label(pass_frame, text="密碼:", width=10).pack(side=tk.LEFT)
         self.password_var = tk.StringVar()
-        ttk.Entry(login_frame, textvariable=self.password_var, show="*", width=30).grid(row=2, column=1, sticky=tk.W, pady=(10, 0))
-        
-        login_frame.columnconfigure(1, weight=1)
+        ttk.Entry(pass_frame, textvariable=self.password_var, show="*", width=25).pack(side=tk.LEFT, padx=(5, 0))
         
         # 填寫設定區
-        config_frame = ttk.LabelFrame(main_frame, text="📅 填寫設定", padding="15")
-        config_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        config_frame = ttk.LabelFrame(content_frame, text="📅 填寫設定", padding="10")
+        config_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(config_frame, text="校內編號:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        # 校內編號
+        school_frame = ttk.Frame(config_frame)
+        school_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(school_frame, text="校內編號:", width=10).pack(side=tk.LEFT)
         self.school_id_var = tk.StringVar(value="")
-        self.school_combo = ttk.Combobox(config_frame, textvariable=self.school_id_var, width=15)
+        self.school_combo = ttk.Combobox(school_frame, textvariable=self.school_id_var, width=15)
         self.school_combo['values'] = ('')
-        self.school_combo.grid(row=0, column=1, sticky=tk.W)
+        self.school_combo.pack(side=tk.LEFT, padx=(5, 0))
         
         # 新增校內編號按鈕
-        ttk.Button(config_frame, text="➕", width=3,
-                  command=self.add_school_id).grid(row=0, column=2, padx=(5, 0))
-        ttk.Label(config_frame, text="新增完成後點選「儲存配置」永久保存", 
-                 font=('Microsoft JhengHei', 8), foreground='gray').grid(row=0, column=3, sticky=tk.W, padx=(5, 0))
+        ttk.Button(school_frame, text="➕", width=3,
+                  command=self.add_school_id).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(school_frame, text="新增完成後點選「儲存配置」", 
+                 font=('Microsoft JhengHei', 8), foreground='gray').pack(side=tk.LEFT, padx=(5, 0))
         
-        # 日期設定 - 使用日期選擇器
+        # 日期設定
         date_frame = ttk.Frame(config_frame)
-        date_frame.grid(row=1, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
+        date_frame.pack(fill=tk.X, pady=(0, 8))
         
         if HAS_TKCALENDAR:
             # 使用tkcalendar的DateEntry
-            ttk.Label(date_frame, text="開始日期:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
-            self.start_date_picker = DateEntry(date_frame, width=12, background='darkblue',
+            date_left = ttk.Frame(date_frame)
+            date_left.pack(side=tk.LEFT)
+            ttk.Label(date_left, text="開始日期:", width=10).pack(side=tk.LEFT)
+            self.start_date_picker = DateEntry(date_left, width=12, background='darkblue',
                                              foreground='white', borderwidth=2, 
                                              date_pattern='yyyy-mm-dd', locale='zh_TW')
-            self.start_date_picker.grid(row=0, column=1, sticky=tk.W)
+            self.start_date_picker.pack(side=tk.LEFT, padx=(5, 15))
             
-            ttk.Label(date_frame, text="結束日期:").grid(row=0, column=2, sticky=tk.W, padx=(30, 10))
-            self.end_date_picker = DateEntry(date_frame, width=12, background='darkblue',
+            date_right = ttk.Frame(date_frame)
+            date_right.pack(side=tk.LEFT)
+            ttk.Label(date_right, text="結束日期:").pack(side=tk.LEFT)
+            self.end_date_picker = DateEntry(date_right, width=12, background='darkblue',
                                            foreground='white', borderwidth=2,
                                            date_pattern='yyyy-mm-dd', locale='zh_TW')
-            self.end_date_picker.grid(row=0, column=3, sticky=tk.W)
+            self.end_date_picker.pack(side=tk.LEFT, padx=(5, 0))
             
             # 設定預設日期
             today = datetime.now().date()
@@ -252,140 +339,159 @@ class JournalAutoFiller:
             
         else:
             # 備用方案：使用下拉選單
-            ttk.Label(date_frame, text="開始日期:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
-            self.start_date_frame = ttk.Frame(date_frame)
-            self.start_date_frame.grid(row=0, column=1, sticky=tk.W)
-            
-            # 開始日期選擇器
             today = datetime.now()
             week_ago = today - timedelta(days=7)
             
+            # 開始日期
+            start_container = ttk.Frame(date_frame)
+            start_container.pack(fill=tk.X, pady=(0, 5))
+            
+            ttk.Label(start_container, text="開始日期:", width=10).pack(side=tk.LEFT)
             self.start_year_var = tk.StringVar(value=str(week_ago.year))
             self.start_month_var = tk.StringVar(value=str(week_ago.month))
             self.start_day_var = tk.StringVar(value=str(week_ago.day))
             
-            ttk.Combobox(self.start_date_frame, textvariable=self.start_year_var, width=6,
-                        values=[str(y) for y in range(2020, 2030)]).grid(row=0, column=0)
-            ttk.Label(self.start_date_frame, text="年").grid(row=0, column=1)
-            ttk.Combobox(self.start_date_frame, textvariable=self.start_month_var, width=4,
-                        values=[str(m) for m in range(1, 13)]).grid(row=0, column=2, padx=(5, 0))
-            ttk.Label(self.start_date_frame, text="月").grid(row=0, column=3)
-            ttk.Combobox(self.start_date_frame, textvariable=self.start_day_var, width=4,
-                        values=[str(d) for d in range(1, 32)]).grid(row=0, column=4, padx=(5, 0))
-            ttk.Label(self.start_date_frame, text="日").grid(row=0, column=5)
+            date_input_frame = ttk.Frame(start_container)
+            date_input_frame.pack(side=tk.LEFT, padx=(5, 0))
             
-            ttk.Label(date_frame, text="結束日期:").grid(row=0, column=2, sticky=tk.W, padx=(30, 10))
-            self.end_date_frame = ttk.Frame(date_frame)
-            self.end_date_frame.grid(row=0, column=3, sticky=tk.W)
+            ttk.Combobox(date_input_frame, textvariable=self.start_year_var, width=6,
+                        values=[str(y) for y in range(2020, 2030)]).pack(side=tk.LEFT)
+            ttk.Label(date_input_frame, text="年").pack(side=tk.LEFT)
+            ttk.Combobox(date_input_frame, textvariable=self.start_month_var, width=3,
+                        values=[str(m) for m in range(1, 13)]).pack(side=tk.LEFT, padx=(2, 0))
+            ttk.Label(date_input_frame, text="月").pack(side=tk.LEFT)
+            ttk.Combobox(date_input_frame, textvariable=self.start_day_var, width=3,
+                        values=[str(d) for d in range(1, 32)]).pack(side=tk.LEFT, padx=(2, 0))
+            ttk.Label(date_input_frame, text="日").pack(side=tk.LEFT)
             
-            # 結束日期選擇器
+            # 結束日期
+            end_container = ttk.Frame(date_frame)
+            end_container.pack(fill=tk.X)
+            
+            ttk.Label(end_container, text="結束日期:", width=10).pack(side=tk.LEFT)
             self.end_year_var = tk.StringVar(value=str(today.year))
             self.end_month_var = tk.StringVar(value=str(today.month))
             self.end_day_var = tk.StringVar(value=str(today.day))
             
-            ttk.Combobox(self.end_date_frame, textvariable=self.end_year_var, width=6,
-                        values=[str(y) for y in range(2020, 2030)]).grid(row=0, column=0)
-            ttk.Label(self.end_date_frame, text="年").grid(row=0, column=1)
-            ttk.Combobox(self.end_date_frame, textvariable=self.end_month_var, width=4,
-                        values=[str(m) for m in range(1, 13)]).grid(row=0, column=2, padx=(5, 0))
-            ttk.Label(self.end_date_frame, text="月").grid(row=0, column=3)
-            ttk.Combobox(self.end_date_frame, textvariable=self.end_day_var, width=4,
-                        values=[str(d) for d in range(1, 32)]).grid(row=0, column=4, padx=(5, 0))
-            ttk.Label(self.end_date_frame, text="日").grid(row=0, column=5)
+            end_input_frame = ttk.Frame(end_container)
+            end_input_frame.pack(side=tk.LEFT, padx=(5, 0))
             
+            ttk.Combobox(end_input_frame, textvariable=self.end_year_var, width=6,
+                        values=[str(y) for y in range(2020, 2030)]).pack(side=tk.LEFT)
+            ttk.Label(end_input_frame, text="年").pack(side=tk.LEFT)
+            ttk.Combobox(end_input_frame, textvariable=self.end_month_var, width=3,
+                        values=[str(m) for m in range(1, 13)]).pack(side=tk.LEFT, padx=(2, 0))
+            ttk.Label(end_input_frame, text="月").pack(side=tk.LEFT)
+            ttk.Combobox(end_input_frame, textvariable=self.end_day_var, width=3,
+                        values=[str(d) for d in range(1, 32)]).pack(side=tk.LEFT, padx=(2, 0))
+            ttk.Label(end_input_frame, text="日").pack(side=tk.LEFT)
+        
         # 安裝提示
         if not HAS_TKCALENDAR:
-            ttk.Label(date_frame, text="💡 安裝 tkcalendar 可使用日期選擇器：pip install tkcalendar", 
-                     font=('Microsoft JhengHei', 8), foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(5, 0))
+            tip_frame = ttk.Frame(config_frame)
+            tip_frame.pack(fill=tk.X, pady=(5, 0))
+            ttk.Label(tip_frame, text="💡 安裝 tkcalendar 可使用日期選擇器：pip install tkcalendar", 
+                     font=('Microsoft JhengHei', 8), foreground='gray').pack()
         
-        ttk.Label(config_frame, text="操作延遲:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=(10, 0))
-        self.delay_var = tk.StringVar(value="1")  # 預設改為1秒
-        delay_combo = ttk.Combobox(config_frame, textvariable=self.delay_var, width=10, 
+        # 操作延遲設定
+        delay_frame = ttk.Frame(config_frame)
+        delay_frame.pack(fill=tk.X)
+        ttk.Label(delay_frame, text="操作延遲:", width=10).pack(side=tk.LEFT)
+        self.delay_var = tk.StringVar(value="1")
+        delay_combo = ttk.Combobox(delay_frame, textvariable=self.delay_var, width=8, 
                                   values=["1", "2", "3", "5"], state="readonly")
-        delay_combo.grid(row=2, column=1, sticky=tk.W, pady=(10, 0))
-        ttk.Label(config_frame, text="秒").grid(row=2, column=2, sticky=tk.W, padx=(5, 0), pady=(10, 0))
+        delay_combo.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(delay_frame, text="秒").pack(side=tk.LEFT, padx=(3, 0))
         
-        # 工作內容區 - 移除模板按鈕
-        content_frame = ttk.LabelFrame(main_frame, text="📝 工作內容", padding="15")
-        content_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
-        main_frame.rowconfigure(3, weight=1)
+        # 工作內容區
+        content_section = ttk.LabelFrame(content_frame, text="📝 工作內容", padding="10")
+        content_section.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        ttk.Label(content_frame, text="工作內容:").grid(row=0, column=0, sticky=(tk.W, tk.N), pady=(0, 5))
-        self.content_text = scrolledtext.ScrolledText(content_frame, height=6, width=70)
-        self.content_text.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.rowconfigure(1, weight=1)
+        ttk.Label(content_section, text="工作內容:").pack(anchor=tk.W, pady=(0, 5))
+        self.content_text = scrolledtext.ScrolledText(content_section, height=5, wrap=tk.WORD)
+        self.content_text.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
         
         # 說明文字
-        ttk.Label(content_frame, text="請輸入工作內容，程式會直接使用您輸入的內容填寫（不做任何修改）", 
-                 font=('Microsoft JhengHei', 9), foreground='gray').grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(content_section, text="請輸入工作內容，程式會直接使用您輸入的內容填寫（不做任何修改）", 
+                 font=('Microsoft JhengHei', 9), foreground='gray').pack(anchor=tk.W)
         
         # 配置檔案管理按鈕
-        config_button_frame = ttk.Frame(content_frame)
-        config_button_frame.grid(row=3, column=0, pady=10)
+        config_button_frame = ttk.Frame(content_section)
+        config_button_frame.pack(pady=(8, 0))
         
         ttk.Button(config_button_frame, text="💾 儲存配置", 
-                  command=self.save_config).pack(side=tk.LEFT, padx=5)
+                  command=self.save_config).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(config_button_frame, text="📁 載入配置", 
-                  command=self.load_config).pack(side=tk.LEFT, padx=5)
+                  command=self.load_config).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(config_button_frame, text="🗑️ 清除配置", 
-                  command=self.clear_config).pack(side=tk.LEFT, padx=5)
+                  command=self.clear_config).pack(side=tk.LEFT)
         
-        ttk.Label(content_frame, text="(配置檔案: config.json)", 
-                 font=('Microsoft JhengHei', 8), foreground='gray').grid(row=4, column=0, sticky=tk.W)
+        ttk.Label(content_section, text="(配置檔案: config.json)", 
+                 font=('Microsoft JhengHei', 8), foreground='gray').pack(pady=(5, 0))
         
         # 執行狀態區
-        status_frame = ttk.LabelFrame(main_frame, text="📊 執行狀態", padding="15")
-        status_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+        status_frame = ttk.LabelFrame(content_frame, text="📊 執行狀態", padding="10")
+        status_frame.pack(fill=tk.X, pady=(0, 10))
         
         self.status_var = tk.StringVar(value="就緒")
         ttk.Label(status_frame, textvariable=self.status_var, 
-                 font=('Microsoft JhengHei', 11)).grid(row=0, column=0, sticky=tk.W)
+                 font=('Microsoft JhengHei', 11)).pack(anchor=tk.W)
         
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(status_frame, variable=self.progress_var, maximum=100)
-        self.progress_bar.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
-        status_frame.columnconfigure(0, weight=1)
+        self.progress_bar.pack(fill=tk.X, pady=(5, 5))
         
         # 統計資訊
         stats_frame = ttk.Frame(status_frame)
-        stats_frame.grid(row=2, column=0, pady=5)
+        stats_frame.pack()
         
         self.total_var = tk.StringVar(value="總計: 0")
         self.success_var = tk.StringVar(value="成功: 0")
         self.failed_var = tk.StringVar(value="失敗: 0")
         
-        ttk.Label(stats_frame, textvariable=self.total_var).pack(side=tk.LEFT, padx=20)
-        ttk.Label(stats_frame, textvariable=self.success_var, foreground='green').pack(side=tk.LEFT, padx=20)
-        ttk.Label(stats_frame, textvariable=self.failed_var, foreground='red').pack(side=tk.LEFT, padx=20)
+        ttk.Label(stats_frame, textvariable=self.total_var).pack(side=tk.LEFT, padx=(0, 15))
+        ttk.Label(stats_frame, textvariable=self.success_var, foreground='green').pack(side=tk.LEFT, padx=(0, 15))
+        ttk.Label(stats_frame, textvariable=self.failed_var, foreground='red').pack(side=tk.LEFT)
         
         # 日誌區
-        log_frame = ttk.LabelFrame(main_frame, text="📜 執行日誌", padding="15")
-        log_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
-        main_frame.rowconfigure(5, weight=1)
+        log_frame = ttk.LabelFrame(content_frame, text="📜 執行日誌", padding="10")
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=8, state='disabled')
-        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=6, state='disabled', wrap=tk.WORD)
+        self.log_text.pack(fill=tk.BOTH, expand=True)
         
         # 控制按鈕
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=6, column=0, columnspan=2, pady=20)
+        button_frame = ttk.Frame(content_frame)
+        button_frame.pack(pady=15)
         
         self.start_btn = ttk.Button(button_frame, text="🚀 開始執行", 
                                    command=self.start_execution)
-        self.start_btn.pack(side=tk.LEFT, padx=10)
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 8))
         
         self.stop_btn = ttk.Button(button_frame, text="⏹️ 停止執行", 
                                   command=self.stop_execution, state='disabled')
-        self.stop_btn.pack(side=tk.LEFT, padx=10)
+        self.stop_btn.pack(side=tk.LEFT, padx=(0, 8))
         
         ttk.Button(button_frame, text="🗑️ 清除日誌", 
-                  command=self.clear_log).pack(side=tk.LEFT, padx=10)
+                  command=self.clear_log).pack(side=tk.LEFT, padx=(0, 8))
         
         ttk.Button(button_frame, text="❓ 說明", 
-                  command=self.show_help).pack(side=tk.LEFT, padx=10)
+                  command=self.show_help).pack(side=tk.LEFT)
+        
+        # 綁定滾動事件到整個應用程式
+        self._bind_mousewheel_to_frame(content_frame)
+        
+    def _bind_mousewheel_to_frame(self, frame):
+        """綁定滑鼠滾輪事件到框架及其子組件"""
+        def _on_mousewheel(event):
+            self.scroll_frame.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            
+        def bind_to_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_to_mousewheel(child)
+                
+        bind_to_mousewheel(frame)
         
     def setup_logging(self):
         """設定日誌系統"""
@@ -643,18 +749,28 @@ class JournalAutoFiller:
         
         help_window = tk.Toplevel(self.root)
         help_window.title("使用說明")
-        help_window.geometry("600x500")
         
-        help_frame = ttk.Frame(help_window, padding="20")
-        help_frame.pack(fill=tk.BOTH, expand=True)
+        # 根據主視窗大小調整說明視窗
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+        help_width = min(700, main_width - 50)
+        help_height = min(600, main_height - 50)
+        help_window.geometry(f"{help_width}x{help_height}")
         
-        help_scroll = scrolledtext.ScrolledText(help_frame, wrap=tk.WORD)
-        help_scroll.pack(fill=tk.BOTH, expand=True)
-        help_scroll.insert('1.0', help_text)
-        help_scroll.config(state='disabled')
+        # 建立滾動框架用於說明內容
+        help_scroll_frame = ScrollableFrame(help_window)
+        help_frame = help_scroll_frame.scrollable_frame
         
-        ttk.Button(help_frame, text="關閉", 
-                  command=help_window.destroy).pack(pady=15)
+        help_content = ttk.Frame(help_frame, padding="20")
+        help_content.pack(fill=tk.BOTH, expand=True)
+        
+        help_scroll_text = scrolledtext.ScrolledText(help_content, wrap=tk.WORD, height=20)
+        help_scroll_text.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        help_scroll_text.insert('1.0', help_text)
+        help_scroll_text.config(state='disabled')
+        
+        ttk.Button(help_content, text="關閉", 
+                  command=help_window.destroy).pack(pady=5)
                   
     def run(self):
         """啟動程式"""
@@ -907,7 +1023,7 @@ class SeleniumBot:
             
             self.logger.error("❌ 無法導航到學習日誌頁面")
             return False
-            
+                
         except Exception as e:
             self.logger.error(f"❌ 導航過程發生錯誤: {e}")
             return False
